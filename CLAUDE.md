@@ -87,3 +87,21 @@ docker run --env-file .env yt-processor
 - **`-c copy` in ffmpeg**: lossless concat — fast but requires all clips to share the same codec and resolution. If clips ever differ (e.g. mixed 720p/1080p), re-encoding will be needed.
 - **`upsert: true` on upload**: re-running a failed job overwrites the previous partial upload rather than erroring.
 - **Clips resolved at job creation**: the worker is kept dumb — it processes whatever is in `clips` without needing to query `sessions` or `events`. The caller (API/frontend) is responsible for building the clips array from the selected events.
+
+## Current Operation
+
+The worker is run **manually on demand** — when a clip export is requested, start the worker locally:
+
+```sh
+npm start
+```
+
+It will process all queued jobs and keep polling until manually stopped.
+
+## Future: Deployment
+
+Planned: deploy the worker as an always-on container so clip exports process automatically without manual intervention. Options to consider:
+
+- **Fly.io / Railway / Render** — run a single Docker container from the existing `Dockerfile`; set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as secrets
+- **Cloud Run (GCP)** — run on demand or as a min-1-instance service
+- The worker is already stateless and supports concurrent replicas (via `claim_job()` `FOR UPDATE SKIP LOCKED`), so horizontal scaling requires no additional changes

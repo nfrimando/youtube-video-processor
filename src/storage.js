@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
 import { readFile } from 'fs/promises';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+import { supabase } from './supabase.js';
 
 export async function uploadResult(localPath, storagePath) {
   const file = await readFile(localPath);

@@ -26,7 +26,7 @@ async function processJob(job) {
     console.log(`[${job.id}] Concatenating ${clipPaths.length} clips…`);
     await concat(clipPaths, outputPath);
 
-    const storagePath = `exports/${job.id}.mp4`;
+    const storagePath = `${job.id}.mp4`;
     console.log(`[${job.id}] Uploading to Supabase Storage…`);
     const publicUrl = await uploadResult(outputPath, storagePath);
 

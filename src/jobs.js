@@ -1,32 +1,23 @@
-import postgres from 'postgres';
-
-const sql = postgres(process.env.DATABASE_URL);
+import { supabase } from './supabase.js';
 
 export async function claimJob() {
-  const [job] = await sql`
-    UPDATE jobs SET status = 'processing', updated_at = now()
-    WHERE id = (
-      SELECT id FROM jobs
-      WHERE status = 'queued'
-      ORDER BY created_at
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING *
-  `;
-  return job ?? null;
+  const { data, error } = await supabase.rpc('claim_job');
+  if (error) throw error;
+  return data?.id ? data : null;
 }
 
 export async function markDone(id, outputPath) {
-  await sql`
-    UPDATE jobs SET status = 'done', output_path = ${outputPath}, updated_at = now()
-    WHERE id = ${id}
-  `;
+  const { error } = await supabase
+    .from('youtube_jobs')
+    .update({ status: 'done', output_path: outputPath })
+    .eq('id', id);
+  if (error) throw error;
 }
 
-export async function markFailed(id, error) {
-  await sql`
-    UPDATE jobs SET status = 'failed', error = ${error}, updated_at = now()
-    WHERE id = ${id}
-  `;
+export async function markFailed(id, errorMsg) {
+  const { error } = await supabase
+    .from('youtube_jobs')
+    .update({ status: 'failed', error: errorMsg })
+    .eq('id', id);
+  if (error) throw error;
 }

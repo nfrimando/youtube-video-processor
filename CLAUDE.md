@@ -6,7 +6,9 @@ A Node.js worker that polls a Supabase Postgres database for jobs, downloads tim
 
 **Poll loop** — `src/index.js` runs an infinite loop that claims one job at a time, processes it, then immediately polls again. If no job is found it sleeps `POLL_INTERVAL_MS` (10 s) before retrying.
 
-**Job claim** — `src/jobs.js` uses `SELECT ... FOR UPDATE SKIP LOCKED` to safely claim a single `queued` row and flip it to `processing`. This makes multiple worker instances safe to run in parallel without double-processing.
+**Job claim** — `src/jobs.js` calls `supabase.rpc('claim_job')`, a Postgres stored procedure that uses `SELECT ... FOR UPDATE SKIP LOCKED` internally. This makes multiple worker instances safe to run in parallel without double-processing.
+
+**Supabase client** — `src/supabase.js` exports a single shared `supabase` client instance (service role) used by both `jobs.js` and `storage.js`.
 
 **Download** — `src/downloader.js` calls `yt-dlp` via `execFile`. It uses `--download-sections` with `--force-keyframes-at-cuts` to fetch only the requested time range from YouTube, writing the result to a temp file.
 
@@ -16,29 +18,40 @@ A Node.js worker that polls a Supabase Postgres database for jobs, downloads tim
 
 **Cleanup** — each job gets a dedicated `/tmp/job_<id>/` working directory that is removed in a `finally` block whether the job succeeds or fails.
 
+## Data Model
+
+The app is a padel match analysis platform. Jobs are created when a user selects events from a session to export as a video clip:
+
+- `sessions` — a match; has a `youtube_url`
+- `events` — timestamped moments in the match (`timestamp_seconds_start`, `timestamp_seconds_end`)
+- `youtube_jobs` — a user-initiated export; references the session and the selected events
+
 ## Database Schema
 
-The worker expects a `jobs` table with at least these columns:
+The worker reads from the `youtube_jobs` table:
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | uuid / serial | primary key |
+| `id` | uuid | primary key |
+| `session_id` | uuid | FK to `sessions` |
+| `type` | text | `clip_export` (extensible via CHECK constraint) |
 | `status` | text | `queued` → `processing` → `done` / `failed` |
-| `clips` | jsonb | array of `{ url, start, end }` objects |
+| `clips` | jsonb | array of `{ url, start, end }` — resolved at job creation |
+| `event_ids` | uuid[] | source event IDs the user selected (UI reference only) |
 | `output_path` | text | written on success (public storage URL) |
 | `error` | text | written on failure |
 | `created_at` | timestamptz | used for FIFO ordering |
-| `updated_at` | timestamptz | updated on every status change |
+| `updated_at` | timestamptz | updated by DB trigger on every status change |
 
-Clips format example:
+Clips format — `start`/`end` are seconds (matching `events.timestamp_seconds_start/end`):
 ```json
 [
-  { "url": "https://www.youtube.com/watch?v=XXXX", "start": "00:01:10", "end": "00:01:45" },
-  { "url": "https://www.youtube.com/watch?v=XXXX", "start": "00:03:00", "end": "00:03:30" }
+  { "url": "https://www.youtube.com/watch?v=XXXX", "start": 70.5, "end": 85.0 },
+  { "url": "https://www.youtube.com/watch?v=XXXX", "start": 180.0, "end": 210.0 }
 ]
 ```
 
-`start`/`end` are passed directly to yt-dlp's `--download-sections` flag (accepts `HH:MM:SS` or seconds).
+The `claim_job()` stored procedure (defined in `schema.sql`) is how the worker atomically claims a queued row.
 
 ## Environment Variables
 
@@ -46,17 +59,16 @@ Defined in `.env.example`:
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | Postgres connection string (Supabase direct connection) |
-| `SUPABASE_URL` | Supabase project URL (for Storage API) |
+| `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key — bypasses RLS, keep secret |
 
 ## Runtime Dependencies
 
-- **Node.js 20** — ESM (`"type": "module"`)
+- **Node.js 20** — ESM (`"type": "module"`); start with `npm start` (uses `--env-file=.env`)
 - **yt-dlp** — must be on `PATH`; handles YouTube download with time-range slicing
 - **ffmpeg 6.1** — must be on `PATH`; handles lossless clip concatenation
-- **`@supabase/supabase-js`** — Storage upload
-- **`postgres`** — direct Postgres client for job queue operations (not the Supabase JS client)
+- **`@supabase/supabase-js`** — all Supabase interactions (job queue via RPC + Storage upload)
+- **`ws`** — WebSocket transport passed to the Supabase client; required for the Realtime connection to work in Node.js
 
 ## Docker
 
@@ -70,7 +82,8 @@ docker run --env-file .env yt-processor
 ## Key Design Decisions
 
 - **Polling over realtime**: the worker polls rather than using Supabase Realtime. Simple and stateless — any number of replicas can run against the same DB without coordination.
-- **`FOR UPDATE SKIP LOCKED`**: the correct pattern for Postgres-backed job queues with concurrent workers. Do not replace with application-level locking.
+- **`claim_job()` stored procedure**: keeps `FOR UPDATE SKIP LOCKED` logic in the database, avoids needing a direct Postgres connection string, and works correctly with concurrent workers.
 - **`execFile` not `exec`**: arguments are passed as an array, avoiding shell injection from untrusted URLs or timestamps.
 - **`-c copy` in ffmpeg**: lossless concat — fast but requires all clips to share the same codec and resolution. If clips ever differ (e.g. mixed 720p/1080p), re-encoding will be needed.
 - **`upsert: true` on upload**: re-running a failed job overwrites the previous partial upload rather than erroring.
+- **Clips resolved at job creation**: the worker is kept dumb — it processes whatever is in `clips` without needing to query `sessions` or `events`. The caller (API/frontend) is responsible for building the clips array from the selected events.

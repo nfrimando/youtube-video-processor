@@ -4,11 +4,17 @@ import { promisify } from 'util';
 const exec = promisify(execFile);
 
 export async function downloadClip(url, start, end, outPath) {
-  await exec('yt-dlp', [
+  const args = [
     '--download-sections', `*${start}-${end}`,
     '--force-keyframes-at-cuts',
-    '-f', 'mp4',
+    '-f', 'b[ext=mp4]',
     '-o', outPath,
-    url,
-  ]);
+  ];
+
+  if (process.env.COOKIES_FROM_BROWSER) {
+    args.push('--cookies-from-browser', process.env.COOKIES_FROM_BROWSER);
+  }
+
+  args.push(url);
+  await exec('yt-dlp', args);
 }

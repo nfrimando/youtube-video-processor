@@ -30,7 +30,8 @@ async function processJob(job) {
     await concat(clipPaths, outputPath);
 
     if (job.runner === 'local') {
-      const outputDir = process.env.LOCAL_OUTPUT_DIR ?? join(homedir(), 'Downloads');
+      const rawDir = process.env.LOCAL_OUTPUT_DIR ?? join(homedir(), 'Downloads');
+      const outputDir = rawDir.startsWith('~/') ? join(homedir(), rawDir.slice(2)) : rawDir;
       const destPath = join(outputDir, `${job.id}.mp4`);
       console.log(`[${job.id}] Saving locally to ${destPath}…`);
       await copyFile(outputPath, destPath);

@@ -61,6 +61,8 @@ The `claim_job()` stored procedure (defined in `schema.sql`) is how the worker a
 - `cloud`: uploaded to Supabase Storage (`exports` bucket); `output_path` is set to the public URL
 - `local`: copied to `LOCAL_OUTPUT_DIR` on the machine running the worker (defaults to `~/Downloads`); `output_path` is set to the local file path
 
+> **Docker constraint**: when running inside a container, only `cloud` jobs make sense — the container has no access to the host filesystem, so `local` jobs would write to a path inside the container that disappears on exit. Ensure any jobs destined for Docker have `runner = 'cloud'`.
+
 ## Environment Variables
 
 Defined in `.env.example`:

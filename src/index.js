@@ -2,7 +2,9 @@ import { claimJob, markDone, markFailed } from './jobs.js';
 import { downloadClip } from './downloader.js';
 import { concat } from './ffmpeg.js';
 import { uploadResult } from './storage.js';
-import { rm, mkdir } from 'fs/promises';
+import { rm, mkdir, copyFile } from 'fs/promises';
+import { homedir } from 'os';
+import { join, basename } from 'path';
 
 const POLL_INTERVAL_MS = 10_000;
 
@@ -26,6 +28,15 @@ async function processJob(job) {
     const outputPath = `${workDir}/output.mp4`;
     console.log(`[${job.id}] Concatenating ${clipPaths.length} clips…`);
     await concat(clipPaths, outputPath);
+
+    if (job.runner === 'local') {
+      const outputDir = process.env.LOCAL_OUTPUT_DIR ?? join(homedir(), 'Downloads');
+      const destPath = join(outputDir, `${job.id}.mp4`);
+      console.log(`[${job.id}] Saving locally to ${destPath}…`);
+      await copyFile(outputPath, destPath);
+      console.log(`[${job.id}] Done (local): ${destPath}`);
+      return destPath;
+    }
 
     const storagePath = `${job.id}.mp4`;
     console.log(`[${job.id}] Uploading to Supabase Storage…`);

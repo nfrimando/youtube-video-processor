@@ -44,6 +44,7 @@ The worker reads from the `youtube_jobs` table:
 | `updated_at` | timestamptz | updated by DB trigger on every status change |
 | `video_status` | text | `available` or `expired` — tracks whether the YouTube video is still accessible |
 | `youtube_url` | text | YouTube URL for all clips in this job |
+| `runner` | text | `cloud` (default) or `local` — controls output destination (see below) |
 
 Clips format — `start`/`end` are seconds (matching `events.timestamp_seconds_start/end`). The YouTube URL is stored once on the job row in `youtube_url`, not per-clip:
 ```json
@@ -55,6 +56,11 @@ Clips format — `start`/`end` are seconds (matching `events.timestamp_seconds_s
 
 The `claim_job()` stored procedure (defined in `schema.sql`) is how the worker atomically claims a queued row.
 
+**Runner modes** — `runner` determines where the output file is delivered after concat:
+
+- `cloud`: uploaded to Supabase Storage (`exports` bucket); `output_path` is set to the public URL
+- `local`: copied to `LOCAL_OUTPUT_DIR` on the machine running the worker (defaults to `~/Downloads`); `output_path` is set to the local file path
+
 ## Environment Variables
 
 Defined in `.env.example`:
@@ -63,6 +69,7 @@ Defined in `.env.example`:
 |----------|---------|
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key — bypasses RLS, keep secret |
+| `LOCAL_OUTPUT_DIR` | Directory for `runner=local` jobs (default: `~/Downloads`) |
 
 ## Runtime Dependencies
 

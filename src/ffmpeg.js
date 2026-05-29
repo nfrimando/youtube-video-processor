@@ -12,7 +12,7 @@ export async function concat(clipPaths, outputPath) {
     '-f', 'concat',
     '-safe', '0',
     '-i', listPath,
-    '-vf', "drawtext=text='Made with padelsense.app':fontsize=24:fontcolor=white@0.6:x=w*0.75-tw/2:y=(h-th)/2:shadowcolor=black@0.4:shadowx=1:shadowy=1",
+    '-vf', "drawtext=text='Analyze your game\nat padelsense.app':fontsize=24:fontcolor=white@0.6:x=w*0.75-tw/2:y=(h-th)/2:shadowcolor=black@0.4:shadowx=1:shadowy=1",
     '-c:v', 'libx264',
     '-preset', 'fast',
     '-crf', '23',

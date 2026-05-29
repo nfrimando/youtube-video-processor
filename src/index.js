@@ -11,11 +11,12 @@ async function processJob(job) {
   await mkdir(workDir, { recursive: true });
 
   try {
-    const clips = job.clips; // [{url, start, end}, ...]
+    const clips = job.clips; // [{start, end}, ...]
+    const url = job.youtube_url;
     const clipPaths = [];
 
     for (let i = 0; i < clips.length; i++) {
-      const { url, start, end } = clips[i];
+      const { start, end } = clips[i];
       const outPath = `${workDir}/clip_${i}.mp4`;
       console.log(`[${job.id}] Downloading clip ${i + 1}/${clips.length}: ${url} (${start}–${end})`);
       await downloadClip(url, start, end, outPath);

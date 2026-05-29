@@ -36,18 +36,20 @@ The worker reads from the `youtube_jobs` table:
 | `session_id` | uuid | FK to `sessions` |
 | `type` | text | `clip_export` (extensible via CHECK constraint) |
 | `status` | text | `queued` → `processing` → `done` / `failed` |
-| `clips` | jsonb | array of `{ url, start, end }` — resolved at job creation |
+| `clips` | jsonb | array of `{ start, end }` — resolved at job creation |
 | `event_ids` | uuid[] | source event IDs the user selected (UI reference only) |
 | `output_path` | text | written on success (public storage URL) |
 | `error` | text | written on failure |
 | `created_at` | timestamptz | used for FIFO ordering |
 | `updated_at` | timestamptz | updated by DB trigger on every status change |
+| `video_status` | text | `available` or `expired` — tracks whether the YouTube video is still accessible |
+| `youtube_url` | text | YouTube URL for all clips in this job |
 
-Clips format — `start`/`end` are seconds (matching `events.timestamp_seconds_start/end`):
+Clips format — `start`/`end` are seconds (matching `events.timestamp_seconds_start/end`). The YouTube URL is stored once on the job row in `youtube_url`, not per-clip:
 ```json
 [
-  { "url": "https://www.youtube.com/watch?v=XXXX", "start": 70.5, "end": 85.0 },
-  { "url": "https://www.youtube.com/watch?v=XXXX", "start": 180.0, "end": 210.0 }
+  { "start": 70.5, "end": 85.0 },
+  { "start": 180.0, "end": 210.0 }
 ]
 ```
 

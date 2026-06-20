@@ -1,7 +1,7 @@
 import { supabase } from './supabase.js';
 
-export async function claimJob() {
-  const { data, error } = await supabase.rpc('claim_job');
+export async function claimJob(runnerFilter = null) {
+  const { data, error } = await supabase.rpc('claim_job', { p_runner: runnerFilter });
   if (error) throw error;
   return data?.id ? data : null;
 }

@@ -6,7 +6,7 @@ A Node.js worker that polls a Supabase Postgres database for jobs, downloads tim
 
 **Poll loop** — `src/index.js` runs an infinite loop that claims one job at a time, processes it, then immediately polls again. If no job is found it sleeps `POLL_INTERVAL_MS` (10 s) before retrying.
 
-**Job claim** — `src/jobs.js` calls `supabase.rpc('claim_job')`, a Postgres stored procedure that uses `SELECT ... FOR UPDATE SKIP LOCKED` internally. This makes multiple worker instances safe to run in parallel without double-processing.
+**Job claim** — `src/jobs.js` calls `supabase.rpc('claim_job', { p_runner })`, a Postgres stored procedure that uses `SELECT ... FOR UPDATE SKIP LOCKED` internally. This makes multiple worker instances safe to run in parallel without double-processing. `p_runner` (defaulting to `null`) optionally restricts which `runner` value a given worker instance claims — see `WORKER_RUNNER` below.
 
 **Supabase client** — `src/supabase.js` exports a single shared `supabase` client instance (service role) used by both `jobs.js` and `storage.js`.
 
@@ -54,14 +54,16 @@ Clips format — `start`/`end` are seconds (matching `events.timestamp_seconds_s
 ]
 ```
 
-The `claim_job()` stored procedure (defined in `schema.sql`) is how the worker atomically claims a queued row.
+The `claim_job()` stored procedure (defined in `claim_job.sql` — `schema.sql` is an auto-generated, tables-only dump that doesn't capture functions) is how the worker atomically claims a queued row, optionally filtered to one `runner` value via its `p_runner` argument.
 
-**Runner modes** — `runner` determines where the output file is delivered after concat:
+**Runner modes** — `runner` (a per-job property, set at job creation) determines where the output file is delivered after concat:
 
 - `cloud`: uploaded to Supabase Storage (`exports` bucket); `output_path` is set to the public URL
 - `local`: copied to `LOCAL_OUTPUT_DIR` on the machine running the worker (defaults to `~/Downloads`); `output_path` is set to the local file path
 
-> **Docker constraint**: when running inside a container, only `cloud` jobs make sense — the container has no access to the host filesystem, so `local` jobs would write to a path inside the container that disappears on exit. Ensure any jobs destined for Docker have `runner = 'cloud'`.
+This is distinct from `WORKER_RUNNER` (a per-worker-instance env var) which determines what a given worker instance is allowed to *claim* in the first place.
+
+> **Docker constraint**: when running inside a container, only `cloud` jobs make sense — the container has no access to the host filesystem, so `local` jobs would write to a path inside the container that disappears on exit. This is enforced at the database level: a Docker-deployed worker defaults to `WORKER_RUNNER=cloud`, which is passed to `claim_job()` as `p_runner`, so it physically cannot claim `local` jobs.
 
 ## Environment Variables
 
@@ -72,6 +74,7 @@ Defined in `.env.example`:
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key — bypasses RLS, keep secret |
 | `LOCAL_OUTPUT_DIR` | Directory for `runner=local` jobs (default: `~/Downloads`) |
+| `WORKER_RUNNER` | Which `runner` value this worker instance claims (`cloud` or `local`, default `cloud`); validated at startup |
 
 ## Runtime Dependencies
 
@@ -101,18 +104,9 @@ docker run --env-file .env yt-processor
 
 ## Current Operation
 
-The worker is run **manually on demand** — when a clip export is requested, start the worker locally:
+Two worker instances run in practice, distinguished by `WORKER_RUNNER`:
 
-```sh
-npm start
-```
+- **VPS (perpetual)** — runs as an always-on Docker container (`docker-compose.yml`, `restart: unless-stopped`) with `WORKER_RUNNER=cloud` (the default). It only ever claims and processes `runner = 'cloud'` jobs. See README's "Deploying to a VPS" section for operational commands.
+- **Local (manual, on demand)** — `runner = 'local'` jobs are left untouched in the queue by the VPS worker; process them by running `WORKER_RUNNER=local npm start` on your own machine, which delivers output to `LOCAL_OUTPUT_DIR`.
 
-It will process all queued jobs and keep polling until manually stopped.
-
-## Future: Deployment
-
-Planned: deploy the worker as an always-on container so clip exports process automatically without manual intervention. Options to consider:
-
-- **Fly.io / Railway / Render** — run a single Docker container from the existing `Dockerfile`; set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as secrets
-- **Cloud Run (GCP)** — run on demand or as a min-1-instance service
-- The worker is already stateless and supports concurrent replicas (via `claim_job()` `FOR UPDATE SKIP LOCKED`), so horizontal scaling requires no additional changes
+The worker is already stateless and supports concurrent replicas (via `claim_job()`'s `FOR UPDATE SKIP LOCKED`), so horizontal scaling requires no additional changes.

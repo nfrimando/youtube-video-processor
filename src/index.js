@@ -8,6 +8,14 @@ import { join, basename } from 'path';
 
 const POLL_INTERVAL_MS = 10_000;
 
+const VALID_RUNNERS = ['cloud', 'local'];
+const WORKER_RUNNER = process.env.WORKER_RUNNER ?? 'cloud';
+
+if (!VALID_RUNNERS.includes(WORKER_RUNNER)) {
+  console.error(`Invalid WORKER_RUNNER "${WORKER_RUNNER}" — must be one of: ${VALID_RUNNERS.join(', ')}`);
+  process.exit(1);
+}
+
 async function processJob(job) {
   const workDir = `/tmp/job_${job.id}`;
   await mkdir(workDir, { recursive: true });
@@ -51,11 +59,11 @@ async function processJob(job) {
 }
 
 async function main() {
-  console.log('Worker started — polling for jobs every', POLL_INTERVAL_MS / 1000, 'seconds');
+  console.log(`Worker started — runner=${WORKER_RUNNER}, polling every`, POLL_INTERVAL_MS / 1000, 'seconds');
 
   while (true) {
     try {
-      const job = await claimJob();
+      const job = await claimJob(WORKER_RUNNER);
 
       if (job) {
         console.log(`[${job.id}] Claimed job`);

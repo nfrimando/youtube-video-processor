@@ -11,10 +11,13 @@ export async function downloadClip(url, start, end, outPath) {
     '-o', outPath,
   ];
 
-  if (process.env.COOKIES_FROM_BROWSER) {
+  if (process.env.COOKIES_FILE) {
+    args.push('--cookies', process.env.COOKIES_FILE);
+  } else if (process.env.COOKIES_FROM_BROWSER) {
     args.push('--cookies-from-browser', process.env.COOKIES_FROM_BROWSER);
   }
 
   args.push(url);
+  console.log('[yt-dlp] args:', args.join(' '));
   await exec('yt-dlp', args);
 }

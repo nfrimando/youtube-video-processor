@@ -7,7 +7,8 @@ export async function downloadClip(url, start, end, outPath) {
   const args = [
     '--download-sections', `*${start}-${end}`,
     '--force-keyframes-at-cuts',
-    '-f', 'b[ext=mp4]',
+    '-f', 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]',
+    '--merge-output-format', 'mp4',
     '-o', outPath,
   ];
 

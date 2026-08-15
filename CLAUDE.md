@@ -10,7 +10,7 @@ A Node.js worker that polls a Supabase Postgres database for jobs, downloads tim
 
 **Supabase client** — `src/supabase.js` exports a single shared `supabase` client instance (service role) used by both `jobs.js` and `storage.js`.
 
-**Download** — `src/downloader.js` calls `yt-dlp` via `execFile`. It uses `--download-sections` with `--force-keyframes-at-cuts` to fetch only the requested time range from YouTube, writing the result to a temp file.
+**Download** — `src/downloader.js` calls `yt-dlp` via `execFile`. It uses `--download-sections` with `--force-keyframes-at-cuts` to fetch only the requested time range from YouTube, writing the result to a temp file. **Fetching only the requested range is a hard requirement** — never "fix" a download failure by pulling the whole video and cutting locally.
 
 **Concat** — `src/ffmpeg.js` writes an ffmpeg concat list file and runs `ffmpeg -f concat -c copy` to stitch clips losslessly. No re-encoding happens — clips must be compatible (same codec/resolution) for this to work correctly.
 
@@ -75,6 +75,8 @@ Defined in `.env.example`:
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key — bypasses RLS, keep secret |
 | `LOCAL_OUTPUT_DIR` | Directory for `runner=local` jobs (default: `~/Downloads`) |
 | `WORKER_RUNNER` | Which `runner` value this worker instance claims (`cloud` or `local`, default `cloud`); validated at startup |
+| `COOKIES_FILE` / `COOKIES_FROM_BROWSER` | YouTube auth for yt-dlp — a Netscape `cookies.txt` path, or a browser to pull cookies from |
+| `YTDLP_PLAYER_CLIENT` | Overrides the YouTube player client (default `web_embedded` when cookies are configured, yt-dlp's own default otherwise) |
 
 ## Runtime Dependencies
 
@@ -99,6 +101,7 @@ docker run --env-file .env yt-processor
 - **`claim_job()` stored procedure**: keeps `FOR UPDATE SKIP LOCKED` logic in the database, avoids needing a direct Postgres connection string, and works correctly with concurrent workers.
 - **`execFile` not `exec`**: arguments are passed as an array, avoiding shell injection from untrusted URLs or timestamps.
 - **`-c copy` in ffmpeg**: lossless concat — fast but requires all clips to share the same codec and resolution. If clips ever differ (e.g. mixed 720p/1080p), re-encoding will be needed.
+- **`web_embedded` player client when authenticated**: yt-dlp's default client (`android_vr`) is the only one serving full formats anonymously, but it cannot authenticate — pair it with cookies and googlevideo `403`s every media request. `web_embedded` serves full formats for a signed-in session. If a `403` returns, check the player client first; ranged requests themselves are fine.
 - **`upsert: true` on upload**: re-running a failed job overwrites the previous partial upload rather than erroring.
 - **Clips resolved at job creation**: the worker is kept dumb — it processes whatever is in `clips` without needing to query `sessions` or `events`. The caller (API/frontend) is responsible for building the clips array from the selected events.
 
